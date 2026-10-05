@@ -79,7 +79,7 @@ flowchart TB
         FE["관리자 대시보드<br/>dashboard/frontend"]
         BE["FastAPI 백엔드<br/>dashboard/backend<br/>사전점검 · 작업 러너 · 증적 · 보고서"]
         DB[("MySQL<br/>kisa_console")]
-        AN["ansible-playbook<br/>unix/ · web/ · db/"]
+        AN["ansible-playbook<br/>ansible/unix · web · dbms"]
         FE -- "REST API" --> BE
         BE -- "결과 저장" --> DB
         BE -- "작업 실행" --> AN
@@ -122,22 +122,24 @@ flowchart TB
 │   │   └── .env.example
 │   └── frontend/              #   정적 대시보드 (HTML/CSS/Vanilla JS)
 │
-├── unix/                      # UNIX 진단 (U-01 ~ U-67)
-├── web/                       # WEB 진단 (WEB-01 ~ WEB-26)
-├── db/                        # DBMS(MySQL) 진단 (D-항목)
-│   ├── check/                 #   항목별 점검 스크립트 (읽기 전용)
-│   ├── fix/                   #   항목별 조치 스크립트
-│   ├── lib/                   #   공통 Shell 함수, 일괄 실행기(run_checks.sh)
-│   ├── playbooks/             #   deploy / check / audit / remediate_approved
-│   ├── inventory/             #   영역별 대상 호스트·변수 (대시보드가 자동 생성)
-│   ├── reports/               #   점검 결과 JSON (실행 시 생성, Git 제외)
-│   └── tools/                 #   릴리스 빌드(manifest + SHA-256)
+├── ansible/                   # 점검 엔진
+│   ├── unix/                  #   UNIX 진단 (U-01 ~ U-67)
+│   ├── web/                   #   WEB 진단 (WEB-01 ~ WEB-26)
+│   ├── dbms/                  #   DBMS(MySQL) 진단 (D-항목)
+│   │   ├── check/             #     항목별 점검 스크립트 (읽기 전용)
+│   │   ├── fix/               #     항목별 조치 스크립트
+│   │   ├── lib/               #     공통 Shell 함수, 일괄 실행기(run_checks.sh)
+│   │   ├── playbooks/         #     deploy / check / audit / remediate_approved
+│   │   ├── inventory/         #     영역별 대상 호스트·변수 (대시보드가 자동 생성)
+│   │   ├── reports/           #     점검 결과 JSON (실행 시 생성, Git 제외)
+│   │   └── tools/             #     릴리스 빌드(manifest + SHA-256)
+│   └── inventory/hosts.ini    #   전체 자산을 역할별로 묶은 통합 인벤토리 (자동 생성)
 │
-├── inventory/hosts.ini        # 전체 자산을 역할별로 묶은 통합 인벤토리 (자동 생성)
 └── docs/                      # 문서용 이미지
 ```
 
-세 진단 영역(`unix/`, `web/`, `db/`)은 **같은 폴더 규칙을 공유하는 독립 Ansible 프로젝트**입니다.
+루트는 **관리 콘솔(`dashboard/`)** 과 **점검 엔진(`ansible/`)** 두 부분으로 나뉩니다.
+엔진 안의 세 진단 영역(`unix/`, `web/`, `dbms/`)은 **같은 폴더 규칙을 공유하는 독립 Ansible 프로젝트**입니다.
 따라서 영역별로 따로 배포·검증할 수 있고, 새 진단 영역도 같은 구조로 추가할 수 있습니다.
 (DBMS는 추가로 `tasks/`, `templates/`를 사용합니다.)
 
@@ -180,9 +182,9 @@ KISA_MYSQL_PASSWORD=change-me
 KISA_MYSQL_DB=kisa_console
 ```
 
-DBMS 영역의 `db/inventory/group_vars/all.yml`은 MySQL 관리자 비밀번호를 Ansible Vault로 암호화해 두었습니다.
-실행하려면 `db/.vault_pass`를 따로 준비하고, 다른 환경에서는 `all.yml.example`을 참고해 새로 만듭니다.
-`dashboard/backend/.env`와 `db/.vault_pass`는 커밋하지 않습니다.
+DBMS 영역의 `ansible/dbms/inventory/group_vars/all.yml`은 MySQL 관리자 비밀번호를 Ansible Vault로 암호화해 두었습니다.
+실행하려면 `ansible/dbms/.vault_pass`를 따로 준비하고, 다른 환경에서는 `all.yml.example`을 참고해 새로 만듭니다.
+`dashboard/backend/.env`와 `ansible/dbms/.vault_pass`는 커밋하지 않습니다.
 
 ### 7.3 콘솔 실행
 
@@ -217,7 +219,7 @@ python3 -m http.server 8080 --directory frontend
 각 영역 디렉터리에서 실행합니다.
 
 ```bash
-cd unix        # 또는 web
+cd ansible/unix        # 또는 ansible/web
 ansible-playbook playbooks/deploy.yml -e target_hosts=<host>   # 스크립트 배포
 ansible-playbook playbooks/check.yml  -e target_hosts=<host>   # 점검 (설정 변경 없음)
 ansible-playbook playbooks/audit.yml  -e target_hosts=<host>   # 자동조치
@@ -228,7 +230,7 @@ ansible-playbook playbooks/remediate_approved.yml \
 ```
 
 ```bash
-cd db
+cd ansible/dbms
 ansible-playbook playbooks/deploy.yml -e target_hosts=<host>
 ansible-playbook playbooks/check.yml  -e target_hosts=<host>
 ansible-playbook playbooks/audit.yml  -e target_hosts=<host>
@@ -239,7 +241,7 @@ ansible-playbook playbooks/remediate_approved.yml \
 ```
 
 일부 UNIX 항목은 락아웃 위험 때문에 관리자가 값을 지정해야 조치가 진행됩니다.
-필요한 환경변수는 [`unix/docs/override_env_vars.md`](unix/docs/override_env_vars.md)를 참고하세요.
+필요한 환경변수는 [`ansible/unix/docs/override_env_vars.md`](ansible/unix/docs/override_env_vars.md)를 참고하세요.
 
 ### 7.6 기타 도구
 

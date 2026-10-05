@@ -2,9 +2,11 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-# dashboard/backend/runtime.py → 저장소 루트 (unix/, web/, db/, inventory/ 가 있는 위치)
+# dashboard/backend/runtime.py → 저장소 루트
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-UNIFIED_INVENTORY = PROJECT_ROOT / "inventory" / "hosts.ini"
+# 진단영역별 Ansible 프로젝트(unix/, web/, dbms/)와 통합 인벤토리가 있는 위치
+ANSIBLE_ROOT = PROJECT_ROOT / "ansible"
+UNIFIED_INVENTORY = ANSIBLE_ROOT / "inventory" / "hosts.ini"
 
 @dataclass(frozen=True)
 class DomainRuntime:
@@ -25,8 +27,8 @@ class DomainRuntime:
 RUNTIMES = {
     "UNIX": DomainRuntime(
         "UNIX",
-        PROJECT_ROOT / "unix",
-        PROJECT_ROOT / "unix" / "inventory" / "hosts.ini",
+        ANSIBLE_ROOT / "unix",
+        ANSIBLE_ROOT / "unix" / "inventory" / "hosts.ini",
         "playbooks/deploy.yml",
         "playbooks/check.yml",
         "playbooks/audit.yml",
@@ -36,8 +38,8 @@ RUNTIMES = {
     ),
     "WEB": DomainRuntime(
         "WEB",
-        PROJECT_ROOT / "web",
-        PROJECT_ROOT / "web" / "inventory" / "hosts.ini",
+        ANSIBLE_ROOT / "web",
+        ANSIBLE_ROOT / "web" / "inventory" / "hosts.ini",
         "playbooks/deploy.yml",
         "playbooks/check.yml",
         "playbooks/audit.yml",
@@ -47,8 +49,8 @@ RUNTIMES = {
     ),
     "DBMS": DomainRuntime(
         "DBMS",
-        PROJECT_ROOT / "db",
-        PROJECT_ROOT / "db" / "inventory" / "hosts.ini",
+        ANSIBLE_ROOT / "dbms",
+        ANSIBLE_ROOT / "dbms" / "inventory" / "hosts.ini",
         "playbooks/deploy.yml",
         "playbooks/check.yml",
         "playbooks/audit.yml",
