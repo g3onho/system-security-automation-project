@@ -5,7 +5,7 @@ ingest_reports.py
 콘솔 작업은 jobs.py가 결과를 즉시 적재하며, 이 모듈은 기존 리포트를 다시
 적재하는 수동 백필 도구다. --host 없이 실행하면 모든 영역을 순회한다.
 
-사용법 (프로젝트 루트에서):
+사용법 (dashboard/ 디렉터리에서):
   python3 -m backend.ingest_reports
   python3 -m backend.ingest_reports --domain WEB --host web01
 """

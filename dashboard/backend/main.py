@@ -2,11 +2,11 @@
 main.py
 KISA 보안점검 콘솔 백엔드 API (FastAPI).
 
-프론트엔드(frontend/api.js)가 호출하는 REST API를 제공한다.
+프론트엔드(dashboard/frontend/api.js)가 호출하는 REST API를 제공한다.
   GET  /api/results            저장된 점검 결과 전체 조회 (host로 필터 가능)
   POST /api/results             점검 결과 JSON을 DB에 저장(Ansible/점검 스크립트 등이 호출)
 
-실행:
+실행 (dashboard/ 디렉터리에서):
   uvicorn backend.main:app --reload --port 8000
 """
 import ipaddress
@@ -19,9 +19,8 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import ssap_reports
 
-from . import db, inventory_sync, jobs, security
+from . import db, inventory_sync, jobs, security, ssap_reports
 from .runtime import RUNTIMES, domain_for_code
 
 app = FastAPI(title="KISA 보안점검 콘솔 API")

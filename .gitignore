@@ -1,7 +1,31 @@
-backend/.env
-backend/__pycache__/
-backend/*.db
-**/__pycache__/
-db/.vault_pass
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 대시보드 백엔드 비밀값·로컬 DB
+dashboard/backend/.env
+dashboard/backend/*.db
+
+# Ansible Vault 비밀번호 파일
+**/.vault_pass
+
+# 콘솔 실행 중 생성되는 상태·증적 (SSH CA 개인키, 세션, 작업 증적 등)
 runtime/
 evidence/
+
+# 점검 실행 결과 (플레이북이 매번 새로 생성)
+unix/reports/*
+web/reports/*
+db/reports/*
+!*/reports/.gitkeep
+
+# 엑셀 리포트 산출물
+*.xlsx
+
+# OS / 편집기
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

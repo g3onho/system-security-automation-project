@@ -13,9 +13,9 @@ openpyxl 기본 스타일을 버리고 아래 웹 UI 레이아웃 기법을 코�
      막대 간격 확보, 데이터 표식 제거, 범례는 하단으로.
   4) 표 : 얇고 연한 회색(#E2E8F0) 선만, 세로 가운데 정렬 + 들여쓰기 여백.
 
-실행:
-    python3 ssap_reports.py
-    python3 ssap_reports.py -o MyReport.xlsx
+실행 (dashboard/ 디렉터리에서):
+    python3 -m backend.ssap_reports
+    python3 -m backend.ssap_reports -o MyReport.xlsx
 """
 
 import argparse

@@ -2,9 +2,9 @@
 config.py
 DB 접속 정보 등 환경설정을 코드에서 분리해서 관리한다.
 
-우선순위: 실제 환경변수 > backend/.env 파일 > 기본값.
+우선순위: 실제 환경변수 > dashboard/backend/.env 파일 > 기본값.
 운영/개인 환경별로 다른 값을 쓰려면 코드를 고치지 말고
-backend/.env (또는 실제 환경변수 KISA_MYSQL_* )만 바꾸면 된다.
+dashboard/backend/.env (또는 실제 환경변수 KISA_MYSQL_* )만 바꾸면 된다.
 """
 import os
 from dataclasses import dataclass

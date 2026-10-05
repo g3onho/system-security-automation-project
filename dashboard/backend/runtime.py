@@ -2,7 +2,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# dashboard/backend/runtime.py → 저장소 루트 (unix/, web/, db/, inventory/ 가 있는 위치)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UNIFIED_INVENTORY = PROJECT_ROOT / "inventory" / "hosts.ini"
 
 @dataclass(frozen=True)
