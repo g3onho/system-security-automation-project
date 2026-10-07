@@ -7,7 +7,8 @@
 ![점검·조치 화면](docs/images/check-remediate.png)
 
 - **기간** : 2026.08.18 ~ 2026.08.31 (2주, 4인 팀 프로젝트)
-- **담당** : Rocky Linux 진단 스크립트, 컨트롤 노드 구축, SSH Host CA 인증 구현, 대시보드 UI 설계·구축
+- **담당** : SSH Host CA 인증 구현, 대시보드 개발 (FastAPI 백엔드 · 웹 프론트엔드), 점검 스크립트 검증 (팀 공동)
+- **정리 자료** : [포트폴리오](docs/portfolio/portfolio.md) · [회고 글](docs/portfolio/blog.md) · [발표 슬라이드 (PDF)](docs/portfolio/SSAP_slides.pdf)
 
 ---
 
@@ -42,7 +43,7 @@
 - **점검 대상 관리** : 단일 IP 등록 및 `IP,호스트명,진단영역` 형식의 일괄 등록. 등록·삭제 시 Ansible 인벤토리가 자동 동기화됩니다.
 - **영역별 선택 점검** : UNIX / WEB / DBMS 영역을 서버·IP 단위로 골라서 점검합니다.
 - **자동조치와 승인조치 분리** : 저위험·가역적 항목은 점검 직후 자동조치하고, 접속·서비스에 영향을 줄 수 있는 항목은 관리자가 승인한 코드만 조치 후 재점검합니다.
-- **SSH Host CA 기반 접속 대상 검증** : 서버 지문 검증을 생략하지 않고, CA가 서명한 호스트 인증서로 접속 대상의 신원을 확인한 뒤에만 점검·조치를 실행합니다.
+- **SSH Host CA 기반 접속 대상 검증** : 서버 호스트 키 검증을 생략하지 않고, CA가 서명한 호스트 인증서로 접속 대상의 신원을 확인한 뒤에만 점검·조치를 실행합니다.
 - **사전점검(Preflight) 게이트** : SSH 신원 → SSH 인증 → 지원 OS → 비대화형 sudo → 작업 충돌 여부를 확인하고, 하나라도 실패하면 원격 작업을 차단합니다.
 - **보안 점수·등급** : 중요도 배점(상 10 · 중 8 · 하 6)에서 취약 100%, 일부조치 50%를 감점해 100점 만점으로 환산합니다.
 - **작업 증적** : 작업 로그와 결과를 SHA-256 해시와 함께 보존하고 ZIP으로 내려받을 수 있습니다.
@@ -73,36 +74,85 @@
 
 ## 5. 아키텍처와 실행 흐름
 
+시스템은 **세 영역**으로 나뉩니다. 01 대시보드와 02 점검·조치 엔진은 컨트롤 노드에서, 03은 점검 대상 서버에서 동작합니다.
+
+![SSAP 전체 아키텍처](docs/images/architecture.png)
+
 ```mermaid
 flowchart TB
-    subgraph CN["CONTROL NODE"]
-        FE["관리자 대시보드<br/>dashboard/frontend"]
-        BE["FastAPI 백엔드<br/>dashboard/backend<br/>사전점검 · 작업 러너 · 증적 · 보고서"]
-        DB[("MySQL<br/>kisa_console")]
-        AN["ansible-playbook<br/>ansible/unix · web · dbms"]
-        FE -- "REST API" --> BE
-        BE -- "결과 저장" --> DB
-        BE -- "작업 실행" --> AN
-    end
+  Admin[관리자]
 
-    subgraph TH["TARGET HOSTS"]
-        H1["webs<br/>UNIX · WEB"]
-        H2["instructor_db<br/>UNIX · DBMS"]
-        H3["lecturedb<br/>UNIX"]
-    end
+  subgraph L1["01 대시보드 (dashboard/)"]
+    UI[화면 3페이지 · IP 등록 · 점검·조치 · 상세 분석]
+    RPT[보고서 출력 · Excel · PDF]
+    API[FastAPI · API 27개 · 세션 · 재인증]
+    Runner[작업 러너 · 서버 단위 잠금]
+    Gate[사전점검 게이트 · 신원·인증·OS·sudo·충돌]
+    CA[SSH Host CA · ed25519 · 인증서 52주]
+    Store[(저장소 · MySQL 결과·이력 · SQLite 작업·신원)]
+    EV[작업 증적 · SHA-256 · ZIP]
+    UI -- 요청 --> API
+    Store -- 생성 --> RPT
+    Store -- 조회 --> UI
+    API -- 작업 --> Runner
+    Runner -- 사전점검 --> Gate
+    Runner -- 생성 --> EV
+    API -- 읽기·쓰기 --> Store
+    CA -. 신원 확인 .- Gate
+  end
 
-    AN -- "SSH (Host CA 인증서 검증)<br/>스크립트 배포 · 점검 · 조치" --> TH
-    TH -. "결과 JSON → 각 영역 reports/" .-> AN
+  subgraph L2["02 점검 · 조치 엔진 (ansible/)"]
+    Ansible[Ansible · deploy·check·audit·remediate]
+    Trust[SSH 신뢰 설정 · @cert-authority · StrictHostKeyChecking]
+    JSON[결과 JSON · reports/ · 공통 스키마]
+  end
+
+  subgraph L3["03 점검 대상 · Tailscale 가상 네트워크"]
+    H1[webs · Ubuntu 26.04 · UNIX·WEB · Apache]
+    H2[instructor_db · Rocky Linux 9.8 · UNIX·DBMS · MySQL]
+    H3[lecturedb · Rocky Linux 9.8 · UNIX]
+  end
+
+  Admin -- 요청·승인 --> UI
+  Gate -- 통과 --> Ansible
+  CA -. known_hosts .- Trust
+  Ansible -- SSH --> H1 & H2 & H3
+  H1 & H2 & H3 -- 결과 --> JSON
+  JSON -- 적재 --> Store
 ```
 
-1. **대시보드 → API** : 점검 대상과 진단 영역을 골라 작업을 요청합니다.
-2. **사전점검** : 대상 서버의 SSH 신원·인증·OS·sudo·작업 충돌을 확인합니다.
-3. **배포** (`deploy.yml`) : 점검·조치 스크립트를 릴리스로 묶어 대상에 배포합니다. 같은 릴리스가 이미 있으면 재배포하지 않습니다.
+**읽는 법** — 01 대시보드와 02 점검·조치 엔진은 같은 컨트롤 노드에 있습니다. 관리자가 화면에서 대상과 영역을 골라 작업을 요청·승인하면, FastAPI와 작업 러너가 접속 대상의 신원(SSH Host CA)과 실행 조건(사전점검)을 확인한 뒤 02의 Ansible을 실행합니다. 03의 각 서버는 CA 호스트 인증서로 신원이 검증되고, 배포된 점검 릴리스로 점검·조치를 수행합니다. 서버의 결과는 02의 결과 JSON(`reports/`)으로 모이고, 01의 백엔드가 이를 MySQL에 적재해 화면과 보고서(Excel·PDF)의 근거로 씁니다. 실행 기록은 백엔드가 작업마다 SHA-256 증적으로 남깁니다.
+
+| 영역 | 책임 | 주요 구성 |
+|---|---|---|
+| 01 대시보드 | 대상 등록, 작업 요청·승인, 사전점검, 작업 실행·잠금, 결과 저장·조회, 증적 보존, 보고서 출력 | 화면, FastAPI, 작업 러너, 사전점검 게이트, SSH Host CA, MySQL·SQLite, 작업 증적 |
+| 02 점검 · 조치 엔진 | 점검 릴리스 배포, 점검·조치 플레이북 실행, 결과 수집 | Ansible (unix · web · dbms), 결과 JSON |
+| 03 점검 대상 | 점검·조치 스크립트 실행, 결과 생성 | webs, instructor_db, lecturedb |
+
+**실행 흐름** (그림의 ①~⑧)
+
+1. **요청** : 대시보드에서 점검 대상과 진단 영역을 골라 작업을 요청합니다.
+2. **사전점검** : 대상 서버의 SSH 신원·인증·OS·sudo·작업 충돌을 확인하고, 하나라도 실패하면 중단합니다.
+3. **배포** (`deploy.yml`) : 점검·조치 스크립트를 SHA-256 manifest 릴리스로 배포합니다. 같은 릴리스가 이미 있으면 재배포하지 않습니다.
 4. **점검** (`check.yml`) : 읽기 전용으로 실행해 결과 JSON을 수집합니다.
 5. **자동조치** (`audit.yml`) : 자동조치 항목만 수정한 뒤 다시 판정합니다.
 6. **승인조치** (`remediate_approved.yml`) : 관리자가 승인한 코드만 조치하고 재점검합니다.
-7. **적재·표시** : 결과를 MySQL에 저장하고 대시보드에 취약 현황·점수·이력을 표시합니다.
-8. **보고서** : 통합 Excel / PDF 보고서를 생성합니다.
+7. **적재** : 결과 JSON을 MySQL에 저장하고, 작업마다 SHA-256 증적을 남깁니다.
+8. **표시·보고** : 대시보드 화면 3페이지(IP 등록 · 점검·조치 · 상세 분석)에 표시하고, Excel·PDF 보고서를 만듭니다.
+
+### 5.1 세부 아키텍처
+
+**대시보드** — 기능(행)마다 화면 → API → 백엔드 모듈 → 저장소 → 외부 실행 순서로 따라갈 수 있게 정리했습니다.
+
+![대시보드 상세](docs/images/dashboard.png)
+
+**SSH Host CA** — 콘솔에서 확인한 호스트 키 지문을 네트워크 조회 지문과 대조해 승인하고(pending → trusted), CA 서명 인증서를 배포·재조회해 certified가 된 서버에만 원격 작업을 허용합니다.
+
+![SSH Host CA 상세](docs/images/ssh-ca-flow.png)
+
+**점검·조치 엔진** — 검증된 릴리스로 읽기 전용 점검을 하고, 조치는 위험도에 따라 자동조치와 승인조치로 나눈 뒤 같은 조치 스크립트 순서(승인 게이트 → 권한 확인 → 백업 → 변경 → 재판정)를 거칩니다.
+
+![점검·조치 엔진 상세](docs/images/shell-scripts.png)
 
 ## 6. 저장소 구조
 
@@ -135,7 +185,7 @@ flowchart TB
 │   │   └── tools/             #     릴리스 빌드(manifest + SHA-256)
 │   └── inventory/hosts.ini    #   전체 자산을 역할별로 묶은 통합 인벤토리 (자동 생성)
 │
-└── docs/                      # 문서용 이미지
+└── docs/                      # 문서용 이미지(images/) · 포트폴리오 자료(portfolio/)
 ```
 
 루트는 **관리 콘솔(`dashboard/`)** 과 **점검 엔진(`ansible/`)** 두 부분으로 나뉩니다.
@@ -207,12 +257,17 @@ python3 -m http.server 8080 --directory frontend
 
 1. IP 등록 화면에서 관리자 재인증 후 **실습 Host CA 초기화**를 실행합니다.
    CA 개인키는 `runtime/ssh_host_ca`(권한 `0600`, Git 제외)에, 공개키는 `runtime/ssh_host_ca.pub`에 저장됩니다.
-2. 기존 서버는 먼저 콘솔 지문 방식으로 SSH 신원을 승인합니다.
+2. 서버 콘솔에서 확인한 호스트 키 지문을 입력해 SSH 신원을 승인합니다(관리자 재인증). 실습에서는 승인 없이 **전체 서버 인증**을 실행하면 처음 관측한 키를 신뢰하는 bootstrap 경로(감사 로그 `auto_trusted_lab`)도 쓸 수 있습니다.
 3. **인증서 배포**를 실행하면 대상의 `/etc/ssh/sshd_config`를 타임스탬프로 백업하고,
    `sshd -t` 문법 검사와 reload가 모두 성공한 경우에만 인증서를 다시 검증합니다. 실패하면 즉시 원복합니다.
-4. 이후 CA 인증 호스트는 개별 지문 승인 없이 **CA 서명 + 호스트명/IP principal**로 검증됩니다. 인증서 유효기간은 52주입니다.
+4. 이후 CA 인증 호스트는 서버별 키 등록 없이 **CA 서명 + 호스트명/IP principal**로 검증됩니다. 인증서 유효기간은 52주입니다.
 
-> 이 구성은 실습 전용입니다. 운영 환경에서는 Vault나 HSM 기반 서명 서비스로 교체해야 합니다.
+> **이 구성은 실습 전용입니다.** 구현 범위와 한계는 다음과 같습니다.
+>
+> - 첫 신뢰: 처음 접속한 서버가 진짜인지 지문 대조로 확인하도록 만들었지만, 실습 편의를 위해 이 확인을 건너뛰고 처음 받은 키를 그대로 믿는 경로(bootstrap)도 남겨 두었습니다. 이 경로는 기록에 `auto_trusted_lab`으로 표시되지만, 첫 접속 순간 가짜 서버가 응답하면 걸러내지 못합니다(TOFU의 한계).
+> - CA 개인키: 암호 없이 컨트롤 노드에 파일로 보관합니다(`0600`, Git 제외). HSM·Vault는 쓰지 않습니다.
+> - 인증서: 52주 만료만 있고 폐기 목록(KRL)·자동 갱신은 없습니다.
+> - 검증 강제: 대시보드가 실행할 때만 `StrictHostKeyChecking=yes`가 적용됩니다. `ansible/unix`·`ansible/web`의 `ansible.cfg`는 `host_key_checking = False`이므로 7.5처럼 수동 실행하면 검증되지 않습니다.
 
 ### 7.5 영역별 수동 실행 (대시보드 없이)
 
@@ -306,11 +361,15 @@ python3 -m backend.ssap_reports
 
 ### 8.4 SSH Host CA를 도입한 이유
 
-기존 Ansible 설정은 서버 지문 검증을 생략(`host_key_checking = False`)해 빠르게 실행할 수 있었지만,
+기존 Ansible 설정은 서버 호스트 키 검증을 생략(`host_key_checking = False`)해 빠르게 실행할 수 있었지만,
 **잘못된 서버에도 점검·조치가 실행될 수 있는** 문제가 있었습니다.
-서버마다 지문을 관리하는 대신 CA 서명을 신뢰하도록 바꿔, 서명되지 않았거나 만료·불일치한 서버는 자동으로 차단하고
+서버마다 호스트 키를 관리하는 대신 CA 서명을 신뢰하도록 바꿔, 서명되지 않았거나 만료·불일치한 서버는 자동으로 차단하고
 (대시보드에서 실행하는 플레이북은 `StrictHostKeyChecking=yes`와 콘솔이 관리하는 known_hosts로 강제됩니다)
 서버 수가 늘어나도 CA 공개키 한 줄로 같은 신뢰 기준을 적용할 수 있게 했습니다.
+
+실습 서버는 3대였지만 이 프로젝트는 **여러 대의 서버를 한 번에 점검하는 자동화**를 지향합니다. 모든 작업이 SSH로 이뤄지는데, 서버마다 호스트 키를 확인·등록하는 방식은 서버가 늘수록 SSH 연결 관리가 복잡해집니다.
+CA를 쓰면 컨트롤 노드는 CA 공개키 한 줄만 신뢰하면 되므로, 실습 기간 안에 운영 수준의 CA(첫 신뢰 검증, CA 키 보호, 인증서 폐기·갱신)까지 만들 수는 없다는 걸 알면서도
+먼저 3대 규모에서 이 구조가 동작하는지 확인해 두었습니다. 구현하지 못한 부분은 7.4의 한계 목록에 정리했습니다.
 
 ## 9. 대시보드 화면
 
@@ -344,4 +403,4 @@ python3 -m backend.ssap_reports
 - Windows 점검 환경은 지원하지 않습니다.
 - DBMS는 MySQL 기준 10개 항목만 구현되어 있습니다.
 - 서버 장애·네트워크 단절 같은 예외 상황 처리와 Edge Case 테스트를 더 보완해야 합니다.
-- SSH Host CA는 실습용 구성이므로 운영 환경에서는 별도 서명 서비스가 필요합니다.
+- SSH Host CA는 실습용 구성입니다(7.4 참고). bootstrap 경로 차단, CA 개인키 보호(HSM·Vault), 인증서 폐기·갱신, 수동 실행 시 호스트 키 검증이 필요합니다.
